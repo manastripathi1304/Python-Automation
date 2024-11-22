@@ -1,0 +1,81 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_IMAGE = 'my-app-image'
+        DOCKER_CONTAINER = 'my-app-container'
+        SERVER_IP = '192.168.x.x'
+        SSH_USER = 'deploy_user'
+        DEPLOY_DIR = '/var/www/my-app'
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                script {
+                    echo 'Cloning the repository...'
+                }
+                git branch: 'main', url: 'https://github.com/your-repo/my-app.git'
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                script {
+                    echo 'Building the application...'
+                    sh 'mvn clean package' // For Java-based apps; replace with your build command
+                }
+            }
+        }
+
+        stage('Run Unit Tests') {
+            steps {
+                script {
+                    echo 'Running tests...'
+                    sh 'mvn test' // Replace with test commands for your stack
+                }
+            }
+        }
+
+        stage('Docker Build & Push') {
+            steps {
+                script {
+                    echo 'Building Docker image...'
+                    sh """
+                    docker build -t ${DOCKER_IMAGE}:latest .
+                    docker tag ${DOCKER_IMAGE}:latest registry/my-app:${BUILD_NUMBER}
+                    docker push registry/my-app:${BUILD_NUMBER}
+                    """
+                }
+            }
+        }
+
+        stage('Deploy to Server') {
+            steps {
+                script {
+                    echo 'Deploying to server...'
+                    sh """
+                    ssh ${SSH_USER}@${SERVER_IP} '
+                        docker pull registry/my-app:${BUILD_NUMBER}
+                        docker stop ${DOCKER_CONTAINER} || true
+                        docker rm ${DOCKER_CONTAINER} || true
+                        docker run -d --name ${DOCKER_CONTAINER} -p 80:80 ${DOCKER_IMAGE}:latest
+                    '
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            echo 'Pipeline execution completed.'
+        }
+        success {
+            echo 'Deployment succeeded!'
+        }
+        failure {
+            echo 'Deployment failed. Check logs.'
+        }
+    }
+}
